@@ -4,7 +4,6 @@ import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { google } from 'googleapis';
-import { createServer as createViteServer } from 'vite';
 
 // Load environment variables
 dotenv.config();
@@ -890,6 +889,7 @@ app.post('/api/settings', requireAuth, async (req, res) => {
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     // Development Mode (Inject Vite Middleware)
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

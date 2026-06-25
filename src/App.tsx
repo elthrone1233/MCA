@@ -201,11 +201,14 @@ export default function App() {
     };
 
     checkAuth();
-  }, [isOfflineFallback]);
+  }, []);
 
   // Fetch Database Records (and Google Sheets synchronization status)
   const fetchDatabaseRecords = async (token?: string) => {
-    if (isOfflineFallback) {
+    const activeToken = token || sessionStorage.getItem('session_token');
+    const isMockToken = activeToken === 'mock-jwt-token-serverless';
+
+    if (isOfflineFallback && isMockToken) {
       const saved = localStorage.getItem('mca_records');
       if (saved) {
         try {
@@ -215,7 +218,6 @@ export default function App() {
       return;
     }
 
-    const activeToken = token || sessionStorage.getItem('session_token');
     if (!activeToken) return;
 
     try {
@@ -226,13 +228,12 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok) {
+        setIsOfflineFallback(false); // Successfully reached server!
         setRecords(data.records || []);
         setSheetsStatus({
           configured: data.sheetsConnected,
-          spreadsheetId: data.sheetsStatus.includes('Spreadsheet ID') 
-            ? data.sheetsStatus.split('ID: ')[1]?.split(' ')[0] || null 
-            : null,
-          clientEmail: null, // Populated via sheets status API
+          spreadsheetId: null,
+          clientEmail: null,
         });
         setSheetsMessage(data.sheetsStatus || 'Records loaded successfully.');
         
@@ -244,15 +245,18 @@ export default function App() {
         });
         if (statusRes.ok) {
           const statusData = await statusRes.json();
-          setSheetsStatus(prev => ({
-            ...prev,
+          setSheetsStatus({
             configured: statusData.configured,
             spreadsheetId: statusData.spreadsheetId,
             clientEmail: statusData.clientEmail,
-          }));
+          });
         }
       } else {
         showToast(data.error || 'Failed to retrieve records from server.', 'error');
+        if (res.status === 401) {
+          sessionStorage.removeItem('session_token');
+          setIsAuthenticated(false);
+        }
       }
     } catch (err) {
       enableOfflineFallback();
