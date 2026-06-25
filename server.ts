@@ -64,7 +64,7 @@ interface SystemSettings {
   footerText: string;
 }
 
-function readSettings(): SystemSettings {
+function readLocalSettings(): SystemSettings {
   try {
     if (fs.existsSync(settingsPath)) {
       const data = fs.readFileSync(settingsPath, 'utf8');
@@ -81,7 +81,7 @@ function readSettings(): SystemSettings {
   };
 }
 
-function writeSettings(data: SystemSettings) {
+function writeLocalSettings(data: SystemSettings) {
   try {
     const dir = path.dirname(settingsPath);
     if (!fs.existsSync(dir)) {
@@ -101,7 +101,7 @@ interface AdminCredential {
   password?: string;
 }
 
-function readAdmins(): AdminCredential[] {
+function readLocalAdmins(): AdminCredential[] {
   try {
     if (fs.existsSync(adminsPath)) {
       const data = fs.readFileSync(adminsPath, 'utf8');
@@ -118,7 +118,7 @@ function readAdmins(): AdminCredential[] {
   ];
 }
 
-function writeAdmins(data: AdminCredential[]) {
+function writeLocalAdmins(data: AdminCredential[]) {
   try {
     const dir = path.dirname(adminsPath);
     if (!fs.existsSync(dir)) {
@@ -185,6 +185,220 @@ async function ensureHeadersExist(sheets: any, spreadsheetId: string) {
     }
   } catch (err: any) {
     console.error('Error checking/writing headers in Google Sheets:', err.message);
+  }
+}
+
+// Ensure settings worksheet exists in Google Sheets
+async function ensureSettingsSheetExists(sheets: any, spreadsheetId: string) {
+  try {
+    const response = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheetExists = response.data.sheets?.some(
+      (s: any) => s.properties?.title === 'Settings'
+    );
+    if (!sheetExists) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              addSheet: {
+                properties: { title: 'Settings' },
+              },
+            },
+          ],
+        },
+      });
+      const local = readLocalSettings();
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: 'Settings!A1:B5',
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: [
+            ['Key', 'Value'],
+            ['websiteTitle', local.websiteTitle],
+            ['websiteLogoText', local.websiteLogoText],
+            ['faviconUrl', local.faviconUrl],
+            ['footerText', local.footerText],
+          ],
+        },
+      });
+      console.log('Successfully created Settings sheet in Google Sheets');
+    }
+  } catch (err: any) {
+    console.error('Error ensuring Settings sheet exists:', err.message);
+  }
+}
+
+// Ensure admins worksheet exists in Google Sheets
+async function ensureAdminsSheetExists(sheets: any, spreadsheetId: string) {
+  try {
+    const response = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheetExists = response.data.sheets?.some(
+      (s: any) => s.properties?.title === 'Admins'
+    );
+    if (!sheetExists) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              addSheet: {
+                properties: { title: 'Admins' },
+              },
+            },
+          ],
+        },
+      });
+      const local = readLocalAdmins();
+      const values = [['Username', 'Password'], ...local.map(a => [a.username, a.password || ''])];
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `Admins!A1:B${values.length}`,
+        valueInputOption: 'RAW',
+        requestBody: { values },
+      });
+      console.log('Successfully created Admins sheet in Google Sheets');
+    }
+  } catch (err: any) {
+    console.error('Error ensuring Admins sheet exists:', err.message);
+  }
+}
+
+// Read settings from Google Sheets
+async function readSettingsFromSheets(): Promise<SystemSettings> {
+  const config = getSheetsConfig();
+  const fallback = readLocalSettings();
+  if (!config.isConfigured) return fallback;
+
+  try {
+    const sheets = getSheetsClient();
+    await ensureSettingsSheetExists(sheets, config.spreadsheetId!);
+    
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.spreadsheetId!,
+      range: 'Settings!A2:B20',
+    });
+    
+    const rows = response.data.values;
+    if (!rows || rows.length === 0) {
+      return fallback;
+    }
+    
+    const settingsObj: any = {};
+    for (const row of rows) {
+      if (row[0]) {
+        settingsObj[row[0]] = row[1] || '';
+      }
+    }
+    
+    const merged: SystemSettings = {
+      websiteTitle: settingsObj.websiteTitle || fallback.websiteTitle,
+      websiteLogoText: settingsObj.websiteLogoText || fallback.websiteLogoText,
+      faviconUrl: settingsObj.faviconUrl || fallback.faviconUrl,
+      footerText: settingsObj.footerText || fallback.footerText,
+    };
+    
+    writeLocalSettings(merged);
+    return merged;
+  } catch (err: any) {
+    console.error('Error reading settings from Google Sheets:', err.message);
+    return fallback;
+  }
+}
+
+// Write settings to Google Sheets
+async function writeSettingsToSheets(data: SystemSettings) {
+  writeLocalSettings(data);
+  const config = getSheetsConfig();
+  if (!config.isConfigured) return;
+
+  try {
+    const sheets = getSheetsClient();
+    await ensureSettingsSheetExists(sheets, config.spreadsheetId!);
+    
+    const values = [
+      ['websiteTitle', data.websiteTitle],
+      ['websiteLogoText', data.websiteLogoText],
+      ['faviconUrl', data.faviconUrl],
+      ['footerText', data.footerText]
+    ];
+    
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: config.spreadsheetId!,
+      range: 'Settings!A2:B5',
+      valueInputOption: 'RAW',
+      requestBody: { values }
+    });
+  } catch (err: any) {
+    console.error('Error saving settings to Google Sheets:', err.message);
+  }
+}
+
+// Read Admins from Google Sheets
+async function readAdminsFromSheets(): Promise<AdminCredential[]> {
+  const config = getSheetsConfig();
+  const fallback = readLocalAdmins();
+  if (!config.isConfigured) return fallback;
+
+  try {
+    const sheets = getSheetsClient();
+    await ensureAdminsSheetExists(sheets, config.spreadsheetId!);
+    
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: config.spreadsheetId!,
+      range: 'Admins!A2:B200',
+    });
+    
+    const rows = response.data.values;
+    if (!rows || rows.length === 0) {
+      return fallback;
+    }
+    
+    const list: AdminCredential[] = [];
+    for (const row of rows) {
+      if (row[0]) {
+        list.push({
+          username: row[0],
+          password: row[1] || ''
+        });
+      }
+    }
+    
+    writeLocalAdmins(list);
+    return list;
+  } catch (err: any) {
+    console.error('Error reading admins from Google Sheets:', err.message);
+    return fallback;
+  }
+}
+
+// Write Admins to Google Sheets
+async function writeAdminsToSheets(data: AdminCredential[]) {
+  writeLocalAdmins(data);
+  const config = getSheetsConfig();
+  if (!config.isConfigured) return;
+
+  try {
+    const sheets = getSheetsClient();
+    await ensureAdminsSheetExists(sheets, config.spreadsheetId!);
+    
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: config.spreadsheetId!,
+      range: 'Admins!A2:B1000'
+    });
+    
+    if (data.length > 0) {
+      const values = data.map(a => [a.username, a.password || '']);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: config.spreadsheetId!,
+        range: `Admins!A2:B${1 + data.length}`,
+        valueInputOption: 'RAW',
+        requestBody: { values }
+      });
+    }
+  } catch (err: any) {
+    console.error('Error writing admins to Google Sheets:', err.message);
   }
 }
 
@@ -396,7 +610,7 @@ function requireAuth(req: express.Request, res: express.Response, next: express.
 // --- API ENDPOINTS ---
 
 // Admin Login
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
 
   const expectedUsername = process.env.ADMIN_USERNAME || 'admin';
@@ -412,7 +626,7 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   // Check additional admin credentials
-  const additionalAdmins = readAdmins();
+  const additionalAdmins = await readAdminsFromSheets();
   const matched = additionalAdmins.find(
     a => a.username === username && a.password === password
   );
@@ -457,14 +671,14 @@ app.get('/api/auth/me', (req, res) => {
 });
 
 // Get list of registered administrator accounts (only usernames)
-app.get('/api/admins', requireAuth, (req, res) => {
-  const admins = readAdmins();
+app.get('/api/admins', requireAuth, async (req, res) => {
+  const admins = await readAdminsFromSheets();
   const list = admins.map(a => ({ username: a.username }));
   res.json(list);
 });
 
 // Create new administrator account
-app.post('/api/admins', requireAuth, (req, res) => {
+app.post('/api/admins', requireAuth, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !username.trim()) {
     return res.status(400).json({ error: 'Username is required.' });
@@ -476,7 +690,7 @@ app.post('/api/admins', requireAuth, (req, res) => {
   const cleanUser = username.trim();
   const cleanPass = password.trim();
 
-  const admins = readAdmins();
+  const admins = await readAdminsFromSheets();
   const isDuplicate = admins.some(
     a => a.username.toLowerCase() === cleanUser.toLowerCase()
   ) || cleanUser.toLowerCase() === (process.env.ADMIN_USERNAME || 'admin').toLowerCase();
@@ -490,7 +704,7 @@ app.post('/api/admins', requireAuth, (req, res) => {
     password: cleanPass,
   });
 
-  writeAdmins(admins);
+  await writeAdminsToSheets(admins);
   res.json({ success: true, message: 'New admin account added successfully.' });
 });
 
@@ -571,13 +785,13 @@ app.delete('/api/records/:pin', requireAuth, async (req, res) => {
 });
 
 // Fetch system settings (no auth required so the login page can load favicon/brand custom settings)
-app.get('/api/settings', (req, res) => {
-  const currentSettings = readSettings();
+app.get('/api/settings', async (req, res) => {
+  const currentSettings = await readSettingsFromSheets();
   res.json(currentSettings);
 });
 
 // Save system settings
-app.post('/api/settings', requireAuth, (req, res) => {
+app.post('/api/settings', requireAuth, async (req, res) => {
   const { websiteTitle, websiteLogoText, faviconUrl, footerText } = req.body;
   
   if (!websiteTitle || !websiteTitle.trim()) {
@@ -594,7 +808,7 @@ app.post('/api/settings', requireAuth, (req, res) => {
     footerText: (footerText || '').trim(),
   };
   
-  writeSettings(updatedSettings);
+  await writeSettingsToSheets(updatedSettings);
   res.json({ success: true, message: 'System configurations saved successfully.', settings: updatedSettings });
 });
 
@@ -624,4 +838,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (process.env.NETLIFY !== 'true' && !process.env.LAMBDA_TASK_ROOT) {
+  startServer();
+}
+
+export default app;
