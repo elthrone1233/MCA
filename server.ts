@@ -17,7 +17,7 @@ app.use((req, res, next) => {
     req.url = req.url.replace('/.netlify/functions/api', '/api');
   }
   
-  if (process.env.NETLIFY === 'true' && !req.url.startsWith('/api')) {
+  if ((process.env.NETLIFY === 'true' || process.env.LAMBDA_TASK_ROOT) && !req.url.startsWith('/api')) {
     req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
   }
 
