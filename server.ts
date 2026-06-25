@@ -130,12 +130,23 @@ function writeLocalAdmins(data: AdminCredential[]) {
   }
 }
 
+// Clean and sanitize environment variable values (handles wrapping quotes or spaces from Netlify Dashboard)
+function cleanEnvValue(val: string | undefined): string | undefined {
+  if (!val) return undefined;
+  let clean = val.trim();
+  if (clean.startsWith('"') && clean.endsWith('"')) {
+    clean = clean.slice(1, -1);
+  } else if (clean.startsWith("'") && clean.endsWith("'")) {
+    clean = clean.slice(1, -1);
+  }
+  return clean.trim();
+}
 
 // Check Google Sheets API settings and status
 function getSheetsConfig() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY;
-  const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
+  const email = cleanEnvValue(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL);
+  const privateKey = cleanEnvValue(process.env.GOOGLE_PRIVATE_KEY);
+  const spreadsheetId = cleanEnvValue(process.env.GOOGLE_SPREADSHEET_ID);
 
   return {
     isConfigured: !!(email && privateKey && spreadsheetId),
@@ -490,17 +501,33 @@ async function addRecord(newRecord: RecordItem): Promise<{
     return { success: false, sheetsConnected: false, error: 'PIN must be exactly 12 numeric digits.' };
   }
 
-  // Read records to verify unique PIN
-  const current = readLocalDb();
+  // Read current records from the active database
+  const config = getSheetsConfig();
+  let current: RecordItem[] = [];
+
+  if (config.isConfigured) {
+    try {
+      const sheetsResult = await loadAllRecords();
+      if (sheetsResult.sheetsConnected) {
+        current = sheetsResult.records;
+      } else {
+        current = readLocalDb();
+      }
+    } catch (e) {
+      current = readLocalDb();
+    }
+  } else {
+    current = readLocalDb();
+  }
+
   if (current.some(r => r.pin === newRecord.pin)) {
     return { success: false, sheetsConnected: false, error: 'Duplicate PIN error. This PIN is already registered.' };
   }
 
-  // Update local DB first
+  // Update local DB
   const updated = [...current, newRecord];
   writeLocalDb(updated);
 
-  const config = getSheetsConfig();
   if (!config.isConfigured) {
     return {
       success: true,
@@ -540,7 +567,24 @@ async function deleteRecord(pin: string): Promise<{
   sheetsConnected: boolean;
   error?: string;
 }> {
-  const current = readLocalDb();
+  const config = getSheetsConfig();
+  let current: RecordItem[] = [];
+
+  if (config.isConfigured) {
+    try {
+      const sheetsResult = await loadAllRecords();
+      if (sheetsResult.sheetsConnected) {
+        current = sheetsResult.records;
+      } else {
+        current = readLocalDb();
+      }
+    } catch (e) {
+      current = readLocalDb();
+    }
+  } else {
+    current = readLocalDb();
+  }
+
   const updated = current.filter(r => r.pin !== pin);
   
   if (current.length === updated.length) {
@@ -550,7 +594,6 @@ async function deleteRecord(pin: string): Promise<{
   // Write updated data locally
   writeLocalDb(updated);
 
-  const config = getSheetsConfig();
   if (!config.isConfigured) {
     return {
       success: true,
