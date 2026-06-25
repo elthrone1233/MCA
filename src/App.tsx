@@ -120,10 +120,17 @@ export default function App() {
             setSettings(data);
           }
         } else {
-          enableOfflineFallback();
+          // Gracefully load settings from local storage without entering offline mode permanently
+          const savedSettings = localStorage.getItem('mca_settings');
+          if (savedSettings) {
+            try { setSettings(JSON.parse(savedSettings)); } catch (e) {}
+          }
         }
       } catch (e) {
-        enableOfflineFallback();
+        const savedSettings = localStorage.getItem('mca_settings');
+        if (savedSettings) {
+          try { setSettings(JSON.parse(savedSettings)); } catch (e) {}
+        }
       }
     };
     loadSystemSettings();
@@ -162,7 +169,7 @@ export default function App() {
         return;
       }
 
-      if (token === 'mock-jwt-token-serverless' || isOfflineFallback) {
+      if (token === 'mock-jwt-token-serverless') {
         setIsAuthenticated(true);
         setUsername('admin');
         enableOfflineFallback();
@@ -179,6 +186,7 @@ export default function App() {
         if (data.authenticated) {
           setIsAuthenticated(true);
           setUsername(data.username);
+          setIsOfflineFallback(false); // Successfully reached server, disarm offline fallback
           fetchDatabaseRecords(token);
         } else {
           sessionStorage.removeItem('session_token');
@@ -257,6 +265,9 @@ export default function App() {
     setUsername(username);
     setIsAuthenticated(true);
     setActiveView('dashboard');
+    if (token !== 'mock-jwt-token-serverless') {
+      setIsOfflineFallback(false); // Disarm offline mode for authentic backend logins
+    }
     fetchDatabaseRecords(token);
   };
 

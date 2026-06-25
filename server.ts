@@ -15,8 +15,50 @@ const PORT = 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- SESSION STORAGE (In-memory token system for iframe-safe session preservation) ---
-const sessions = new Map<string, { username: string; createdAt: Date }>();
+// --- STATELESS SEAMLESS SESSION TOKENS (Safe for Serverless environments like Netlify) ---
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.GOOGLE_PRIVATE_KEY || 'mca-register-stable-secret-key-12345';
+
+function generateToken(username: string): string {
+  // Session expires in 24 hours
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+  const payload = JSON.stringify({ username, expiresAt });
+  const payloadBase64 = Buffer.from(payload).toString('base64url');
+  
+  const signature = crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(payloadBase64)
+    .digest('base64url');
+    
+  return `${payloadBase64}.${signature}`;
+}
+
+function verifyToken(token: string): { username: string } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 2) return null;
+    
+    const [payloadBase64, signature] = parts;
+    const expectedSignature = crypto
+      .createHmac('sha256', SESSION_SECRET)
+      .update(payloadBase64)
+      .digest('base64url');
+      
+    if (signature !== expectedSignature) {
+      return null;
+    }
+    
+    const payloadStr = Buffer.from(payloadBase64, 'base64url').toString('utf8');
+    const payload = JSON.parse(payloadStr);
+    
+    if (Date.now() > payload.expiresAt) {
+      return null; // Expired
+    }
+    
+    return { username: payload.username };
+  } catch (e) {
+    return null;
+  }
+}
 
 // --- DATABASE PERSISTENCE (Google Sheets with Local JSON Fallback) ---
 const localDbPath = path.join(process.cwd(), 'src', 'records_db.json');
@@ -634,19 +676,20 @@ async function deleteRecord(pin: string): Promise<{
 }
 
 // --- EXPRESS MIDDLEWARES ---
-function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+function requireAuth(req: any, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Access denied. Authorization header is missing or invalid.' });
   }
 
   const token = authHeader.split(' ')[1];
-  const session = sessions.get(token);
+  const sessionUser = verifyToken(token);
 
-  if (!session) {
+  if (!sessionUser) {
     return res.status(401).json({ error: 'Session expired or invalid. Please log in again.' });
   }
 
+  req.username = sessionUser.username;
   next();
 }
 
@@ -660,11 +703,7 @@ app.post('/api/auth/login', async (req, res) => {
   const expectedPassword = process.env.ADMIN_PASSWORD || 'password123';
 
   if (username === expectedUsername && password === expectedPassword) {
-    const token = crypto.randomUUID();
-    sessions.set(token, {
-      username,
-      createdAt: new Date(),
-    });
+    const token = generateToken(username);
     return res.json({ token, username });
   }
 
@@ -675,11 +714,7 @@ app.post('/api/auth/login', async (req, res) => {
   );
 
   if (matched) {
-    const token = crypto.randomUUID();
-    sessions.set(token, {
-      username,
-      createdAt: new Date(),
-    });
+    const token = generateToken(username);
     return res.json({ token, username });
   }
 
@@ -688,11 +723,6 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Admin Logout
 app.post('/api/auth/logout', (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    sessions.delete(token);
-  }
   return res.json({ success: true, message: 'Logged out successfully.' });
 });
 
@@ -704,13 +734,13 @@ app.get('/api/auth/me', (req, res) => {
   }
 
   const token = authHeader.split(' ')[1];
-  const session = sessions.get(token);
+  const sessionUser = verifyToken(token);
 
-  if (!session) {
+  if (!sessionUser) {
     return res.status(401).json({ authenticated: false });
   }
 
-  return res.json({ authenticated: true, username: session.username });
+  return res.json({ authenticated: true, username: sessionUser.username });
 });
 
 // Get list of registered administrator accounts (only usernames)
