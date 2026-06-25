@@ -1,0 +1,57 @@
+[
+  {
+    "pin": "000000000001",
+    "fullName": "Juan Dela Cruz",
+    "dateRegistered": "2026-06-25"
+  },
+  {
+    "pin": "000000000002",
+    "fullName": "Maria Santos",
+    "dateRegistered": "2026-06-25"
+  },
+  {
+    "pin": "000000000003",
+    "fullName": "Jose Rizal",
+    "dateRegistered": "2026-06-25"
+  },
+  {
+    "pin": "000000000004",
+    "fullName": "Andres Bonifacio",
+    "dateRegistered": "2026-06-25"
+  },
+  {
+    "pin": "000000000005",
+    "fullName": "Emilio Aguinaldo",
+    "dateRegistered": "2026-06-25"
+  },
+  {
+    "pin": "000000000006",
+    "fullName": "Clara Sola",
+    "dateRegistered": "2026-06-25"
+  },
+  {
+    "pin": "000000000007",
+    "fullName": "Dante Alighieri",
+    "dateRegistered": "2026-06-25"
+  },
+  {
+    "pin": "000000000008",
+    "fullName": "Ferdinand Magellan",
+    "dateRegistered": "2026-06-25"
+  },
+  {
+    "pin": "000000000009",
+    "fullName": "Gregorio del Pilar",
+    "dateRegistered": "2026-06-25"
+  },
+  {
+    "pin": "000000000010",
+    "fullName": "Gabriela Silang",
+    "dateRegistered": "2026-06-25"
+  },
+  {
+    "pin": "000000000011",
+    "fullName": "Melchora Aquino",
+    "dateRegistered": "2026-06-25"
+  }
+]

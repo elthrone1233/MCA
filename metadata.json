@@ -1,0 +1,6 @@
+{
+  "name": "MCA Register Records System",
+  "description": "A secure record management system with secure authentication, Google Sheets database integration, search, filter, pagination, and landscape printing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
