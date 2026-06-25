@@ -93,6 +93,43 @@ function writeSettings(data: SystemSettings) {
   }
 }
 
+// --- ADMINS PERSISTENCE ---
+const adminsPath = path.join(process.cwd(), 'src', 'admins_db.json');
+
+interface AdminCredential {
+  username: string;
+  password?: string;
+}
+
+function readAdmins(): AdminCredential[] {
+  try {
+    if (fs.existsSync(adminsPath)) {
+      const data = fs.readFileSync(adminsPath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Error reading admins JSON db:', error);
+  }
+  return [
+    {
+      username: process.env.ADMIN_USERNAME || 'admin',
+      password: process.env.ADMIN_PASSWORD || 'password123'
+    }
+  ];
+}
+
+function writeAdmins(data: AdminCredential[]) {
+  try {
+    const dir = path.dirname(adminsPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(adminsPath, JSON.stringify(data, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Error writing admins JSON db:', error);
+  }
+}
+
 
 // Check Google Sheets API settings and status
 function getSheetsConfig() {
@@ -374,6 +411,21 @@ app.post('/api/auth/login', (req, res) => {
     return res.json({ token, username });
   }
 
+  // Check additional admin credentials
+  const additionalAdmins = readAdmins();
+  const matched = additionalAdmins.find(
+    a => a.username === username && a.password === password
+  );
+
+  if (matched) {
+    const token = crypto.randomUUID();
+    sessions.set(token, {
+      username,
+      createdAt: new Date(),
+    });
+    return res.json({ token, username });
+  }
+
   return res.status(400).json({ error: 'Invalid username or password.' });
 });
 
@@ -402,6 +454,44 @@ app.get('/api/auth/me', (req, res) => {
   }
 
   return res.json({ authenticated: true, username: session.username });
+});
+
+// Get list of registered administrator accounts (only usernames)
+app.get('/api/admins', requireAuth, (req, res) => {
+  const admins = readAdmins();
+  const list = admins.map(a => ({ username: a.username }));
+  res.json(list);
+});
+
+// Create new administrator account
+app.post('/api/admins', requireAuth, (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !username.trim()) {
+    return res.status(400).json({ error: 'Username is required.' });
+  }
+  if (!password || !password.trim()) {
+    return res.status(400).json({ error: 'Password is required.' });
+  }
+
+  const cleanUser = username.trim();
+  const cleanPass = password.trim();
+
+  const admins = readAdmins();
+  const isDuplicate = admins.some(
+    a => a.username.toLowerCase() === cleanUser.toLowerCase()
+  ) || cleanUser.toLowerCase() === (process.env.ADMIN_USERNAME || 'admin').toLowerCase();
+
+  if (isDuplicate) {
+    return res.status(400).json({ error: 'Username already exists.' });
+  }
+
+  admins.push({
+    username: cleanUser,
+    password: cleanPass,
+  });
+
+  writeAdmins(admins);
+  res.json({ success: true, message: 'New admin account added successfully.' });
 });
 
 // Get Database / Integration Status

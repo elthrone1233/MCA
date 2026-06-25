@@ -19,6 +19,7 @@ export default function RecordsList({ records, onDeleteRecord, setView, setPrint
   const [currentPage, setCurrentPage] = useState(1);
   const [confirmDeletePin, setConfirmDeletePin] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isPrintDropdownOpen, setIsPrintDropdownOpen] = useState(false);
 
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
@@ -116,10 +117,11 @@ export default function RecordsList({ records, onDeleteRecord, setView, setPrint
 
         {/* Print Preview Options Dropdown/Group */}
         <div className="flex items-center gap-2">
-          <div className="relative inline-block text-left group">
+          <div className="relative inline-block text-left">
             <button
               type="button"
               id="print-preview-button"
+              onClick={() => setIsPrintDropdownOpen(!isPrintDropdownOpen)}
               className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-neutral-900 hover:bg-neutral-800 transition duration-150 inline-flex items-center space-x-2 shadow-sm focus:outline-none"
             >
               <Printer className="h-4.5 w-4.5" />
@@ -127,23 +129,31 @@ export default function RecordsList({ records, onDeleteRecord, setView, setPrint
             </button>
             
             {/* Dropdown menu */}
-            <div className="absolute right-0 mt-1.5 w-56 rounded-xl bg-white border border-neutral-200/80 shadow-lg hidden group-hover:block hover:block z-20">
-              <div className="p-1.5 space-y-1">
-                <button
-                  onClick={() => handlePrintPreview('all')}
-                  className="w-full text-left px-3.5 py-2 text-sm text-neutral-700 hover:bg-neutral-50 hover:text-neutral-900 rounded-lg transition"
-                >
-                  Print All Records ({records.length})
-                </button>
-                <button
-                  onClick={() => handlePrintPreview('filtered')}
-                  className="w-full text-left px-3.5 py-2 text-sm text-neutral-700 hover:bg-neutral-50 hover:text-neutral-900 rounded-lg transition"
-                  disabled={filteredAndSortedRecords.length === 0}
-                >
-                  Print Filtered Only ({filteredAndSortedRecords.length})
-                </button>
+            {isPrintDropdownOpen && (
+              <div className="absolute right-0 mt-1.5 w-56 rounded-xl bg-white border border-neutral-200/80 shadow-lg z-20">
+                <div className="p-1.5 space-y-1">
+                  <button
+                    onClick={() => {
+                      handlePrintPreview('all');
+                      setIsPrintDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-sm text-neutral-700 hover:bg-neutral-50 hover:text-neutral-900 rounded-lg transition"
+                  >
+                    Print All Records ({records.length})
+                  </button>
+                  <button
+                    onClick={() => {
+                      handlePrintPreview('filtered');
+                      setIsPrintDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-sm text-neutral-700 hover:bg-neutral-50 hover:text-neutral-900 rounded-lg transition"
+                    disabled={filteredAndSortedRecords.length === 0}
+                  >
+                    Print Filtered Only ({filteredAndSortedRecords.length})
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

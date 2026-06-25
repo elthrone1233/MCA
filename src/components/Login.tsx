@@ -29,44 +29,71 @@ export default function Login({ onLogin, showToast, settings }: LoginProps) {
     setIsLoading(true);
     setError(null);
 
+    // Helper to check if fallback/offline credentials match
+    const checkFallbackCredentials = () => {
+      const cleanUser = username.trim();
+      const cleanPass = password.trim();
+      if (cleanUser === 'admin' && cleanPass === 'password123') {
+        return true;
+      }
+      
+      // Check localStorage for added admin credentials
+      const stored = localStorage.getItem('mca_admins');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          return parsed.some((a: any) => a.username.toLowerCase() === cleanUser.toLowerCase() && a.password === cleanPass);
+        } catch (e) {
+          return false;
+        }
+      }
+      return false;
+    };
+
     try {
-      let res;
+      const isFallbackCreds = checkFallbackCredentials();
+
       try {
-        res = await fetch('/api/auth/login', {
+        const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password }),
         });
-      } catch (netErr) {
-        // Network fetch error (server unavailable / static hosting) -> check client-side fallback
-        if (username.trim() === 'admin' && password.trim() === 'password123') {
+
+        // Detect Netlify URL redirection (index.html text/html) or standard 404
+        const contentType = res.headers.get('content-type') || '';
+        if (res.status === 404 || contentType.includes('text/html')) {
+          if (isFallbackCreds) {
+            showToast('Logged in (Netlify Client Mode)', 'success');
+            onLogin('mock-jwt-token-serverless', username.trim());
+            return;
+          } else {
+            throw new Error('Invalid username or password.');
+          }
+        }
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Invalid username or password.');
+        }
+
+        showToast('Logged in successfully!', 'success');
+        onLogin(data.token, data.username);
+      } catch (err: any) {
+        // Fallback checks for JSON parse errors, CORS, or local offline development
+        if (isFallbackCreds) {
           showToast('Logged in (Netlify Client Mode)', 'success');
-          onLogin('mock-jwt-token-serverless', 'admin');
+          onLogin('mock-jwt-token-serverless', username.trim());
           return;
         } else {
-          throw new Error('Invalid credentials (Offline Mode)');
+          // Normal error display if they input incorrect credentials in offline mode
+          const cleanMessage = err.message && !err.message.includes('Unexpected token') && !err.message.includes('fetch')
+            ? err.message 
+            : 'Invalid username or password.';
+          throw new Error(cleanMessage);
         }
       }
-
-      if (res && res.status === 404) {
-        // API doesn't exist (static serverless environment)
-        if (username.trim() === 'admin' && password.trim() === 'password123') {
-          showToast('Logged in (Netlify Client Mode)', 'success');
-          onLogin('mock-jwt-token-serverless', 'admin');
-          return;
-        } else {
-          throw new Error('Invalid credentials (Offline Mode)');
-        }
-      }
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Invalid credentials');
-      }
-
-      showToast('Logged in successfully!', 'success');
-      onLogin(data.token, data.username);
     } catch (err: any) {
       setError(err.message || 'Something went wrong. Please check your credentials.');
       showToast(err.message || 'Login failed', 'error');
