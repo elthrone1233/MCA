@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ShieldCheck, User, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, User, Lock, AlertCircle, Eye, EyeOff, Server, Wifi, WifiOff } from 'lucide-react';
 
 interface LoginProps {
   onLogin: (token: string, username: string) => void;
@@ -18,6 +18,25 @@ export default function Login({ onLogin, showToast, settings }: LoginProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+
+  // Perform background connection check to the Netlify Backend
+  useEffect(() => {
+    const checkBackend = async () => {
+      try {
+        const res = await fetch('/api/settings');
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          setBackendStatus('online');
+        } else {
+          setBackendStatus('offline');
+        }
+      } catch (err) {
+        setBackendStatus('offline');
+      }
+    };
+    checkBackend();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,11 +79,15 @@ export default function Login({ onLogin, showToast, settings }: LoginProps) {
           body: JSON.stringify({ username, password }),
         });
 
-        // Detect Netlify URL redirection (index.html text/html) or standard 404
         const contentType = res.headers.get('content-type') || '';
+        
+        // If backend is online, do NOT allow HTML/404 fallback redirection to local-only browser storage!
         if (res.status === 404 || contentType.includes('text/html')) {
+          if (backendStatus === 'online') {
+            throw new Error('Authentication endpoint is temporarily unreachable. Please contact the administrator.');
+          }
           if (isFallbackCreds) {
-            showToast('Logged in (Netlify Client Mode)', 'success');
+            showToast('Logged in (Local Browser Storage Mode)', 'success');
             onLogin('mock-jwt-token-serverless', username.trim());
             return;
           } else {
@@ -81,9 +104,14 @@ export default function Login({ onLogin, showToast, settings }: LoginProps) {
         showToast('Logged in successfully!', 'success');
         onLogin(data.token, data.username);
       } catch (err: any) {
+        // If the backend is online, force real authentication failures!
+        if (backendStatus === 'online') {
+          throw err;
+        }
+
         // Fallback checks for JSON parse errors, CORS, or local offline development
         if (isFallbackCreds) {
-          showToast('Logged in (Netlify Client Mode)', 'success');
+          showToast('Logged in (Local Browser Storage Mode)', 'success');
           onLogin('mock-jwt-token-serverless', username.trim());
           return;
         } else {
@@ -124,6 +152,35 @@ export default function Login({ onLogin, showToast, settings }: LoginProps) {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-10 rounded-2xl border border-neutral-200/80 shadow-sm">
+          {/* Real-time Connection Status Badge */}
+          <div className="mb-6 flex justify-center" id="connection-status-badge">
+            {backendStatus === 'checking' && (
+              <div className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-full bg-neutral-100 text-neutral-600 text-xs font-semibold border border-neutral-200">
+                <svg className="animate-spin h-3.5 w-3.5 text-neutral-500" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span>Verifying Netlify Connection...</span>
+              </div>
+            )}
+            {backendStatus === 'online' && (
+              <div className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-100 shadow-sm animate-fade-in">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <Server className="h-3 w-3 text-emerald-600" />
+                <span>Netlify Live Backend Connected</span>
+              </div>
+            )}
+            {backendStatus === 'offline' && (
+              <div className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-full bg-amber-50 text-amber-800 text-xs font-semibold border border-amber-100 shadow-sm animate-fade-in">
+                <WifiOff className="h-3 w-3 text-amber-600" />
+                <span>Offline Fallback (Browser-Only Mode)</span>
+              </div>
+            )}
+          </div>
+
           {error && (
             <div className="mb-6 rounded-xl bg-red-50 p-4 border border-red-100 flex items-start space-x-3 text-red-800 text-sm animate-fade-in" id="login-error-alert">
               <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />

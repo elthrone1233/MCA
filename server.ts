@@ -11,6 +11,21 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Normalize Netlify serverless function pathing to standard /api/ endpoints
+app.use((req, res, next) => {
+  if (req.url.startsWith('/.netlify/functions/api')) {
+    req.url = req.url.replace('/.netlify/functions/api', '/api');
+  }
+  
+  if (process.env.NETLIFY === 'true' && !req.url.startsWith('/api')) {
+    req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+  }
+
+  // Remove duplicate slashes if any
+  req.url = req.url.replace(/\/{2,}/g, '/');
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

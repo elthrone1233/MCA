@@ -193,10 +193,22 @@ export default function App() {
           setIsAuthenticated(false);
         }
       } catch (err) {
-        // Safe static fallback
-        setIsAuthenticated(true);
-        setUsername('admin');
-        enableOfflineFallback();
+        console.error("Auth server connection failed:", err);
+        // Only if it's explicitly a mock token should we enter offline fallback mode
+        if (token === 'mock-jwt-token-serverless') {
+          setIsAuthenticated(true);
+          setUsername('admin');
+          enableOfflineFallback();
+        } else {
+          // If it was a real login token, do not force offline fallback. Keep current session and warn the user.
+          setIsAuthenticated(true);
+          setUsername('admin');
+          const saved = localStorage.getItem('mca_records');
+          if (saved) {
+            try { setRecords(JSON.parse(saved)); } catch (e) {}
+          }
+          showToast("Unable to reach live Netlify server. Operating in offline view mode.", "error");
+        }
       }
     };
 
@@ -259,7 +271,14 @@ export default function App() {
         }
       }
     } catch (err) {
-      enableOfflineFallback();
+      console.error("Failed to connect to backend:", err);
+      showToast('Could not reach Netlify server. Displaying local cache.', 'error');
+      const saved = localStorage.getItem('mca_records');
+      if (saved) {
+        try {
+          setRecords(JSON.parse(saved));
+        } catch (e) {}
+      }
     }
   };
 
