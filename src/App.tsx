@@ -59,56 +59,6 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const [isOfflineFallback, setIsOfflineFallback] = useState<boolean>(false);
-
-  // Helper to fallback to localStorage
-  const enableOfflineFallback = () => {
-    setIsOfflineFallback(true);
-    // Load settings from localStorage
-    const savedSettings = localStorage.getItem('mca_settings');
-    if (savedSettings) {
-      try {
-        setSettings(JSON.parse(savedSettings));
-      } catch (e) {}
-    } else {
-      const defaults = {
-        websiteTitle: 'MCA Register Records System',
-        websiteLogoText: 'MCA Register',
-        faviconUrl: 'https://img.icons8.com/color/48/data-configuration.png',
-        footerText: 'MCA Register Records System'
-      };
-      localStorage.setItem('mca_settings', JSON.stringify(defaults));
-      setSettings(defaults);
-    }
-
-    // Load initial records from localStorage
-    const savedRecords = localStorage.getItem('mca_records');
-    if (savedRecords) {
-      try {
-        setRecords(JSON.parse(savedRecords));
-      } catch (e) {}
-    } else {
-      const initialMock = [
-        { "pin": "000000000001", "fullName": "Juan Dela Cruz", "dateRegistered": "2026-06-25" },
-        { "pin": "000000000002", "fullName": "Maria Santos", "dateRegistered": "2026-06-25" },
-        { "pin": "000000000003", "fullName": "Jose Rizal", "dateRegistered": "2026-06-25" },
-        { "pin": "000000000004", "fullName": "Andres Bonifacio", "dateRegistered": "2026-06-25" },
-        { "pin": "000000000005", "fullName": "Emilio Aguinaldo", "dateRegistered": "2026-06-25" },
-        { "pin": "000000000006", "fullName": "Clara Sola", "dateRegistered": "2026-06-25" },
-        { "pin": "000000000007", "fullName": "Dante Alighieri", "dateRegistered": "2026-06-25" }
-      ];
-      localStorage.setItem('mca_records', JSON.stringify(initialMock));
-      setRecords(initialMock);
-    }
-
-    setSheetsStatus({
-      configured: true,
-      spreadsheetId: 'DEMO_BROWSER_DATABASE_MODE',
-      clientEmail: 'local-browser-storage@netlify.com',
-    });
-    setSheetsMessage('Netlify Live-Demo Client Mode: Connected to Browser Storage (Local Database)');
-  };
-
   // Fetch customizable settings from the backend once on mount
   useEffect(() => {
     const loadSystemSettings = async () => {
@@ -170,9 +120,8 @@ export default function App() {
       }
 
       if (token === 'mock-jwt-token-serverless') {
-        setIsAuthenticated(true);
-        setUsername('admin');
-        enableOfflineFallback();
+        sessionStorage.removeItem('session_token');
+        setIsAuthenticated(false);
         return;
       }
 
@@ -186,7 +135,6 @@ export default function App() {
         if (data.authenticated) {
           setIsAuthenticated(true);
           setUsername(data.username);
-          setIsOfflineFallback(false); // Successfully reached server, disarm offline fallback
           fetchDatabaseRecords(token);
         } else {
           sessionStorage.removeItem('session_token');
@@ -194,21 +142,8 @@ export default function App() {
         }
       } catch (err) {
         console.error("Auth server connection failed:", err);
-        // Only if it's explicitly a mock token should we enter offline fallback mode
-        if (token === 'mock-jwt-token-serverless') {
-          setIsAuthenticated(true);
-          setUsername('admin');
-          enableOfflineFallback();
-        } else {
-          // If it was a real login token, do not force offline fallback. Keep current session and warn the user.
-          setIsAuthenticated(true);
-          setUsername('admin');
-          const saved = localStorage.getItem('mca_records');
-          if (saved) {
-            try { setRecords(JSON.parse(saved)); } catch (e) {}
-          }
-          showToast("Unable to reach live Netlify server. Operating in offline view mode.", "error");
-        }
+        showToast("Unable to reach live Netlify server. Operating in offline view mode.", "error");
+        setIsAuthenticated(false);
       }
     };
 
@@ -218,18 +153,6 @@ export default function App() {
   // Fetch Database Records (and Google Sheets synchronization status)
   const fetchDatabaseRecords = async (token?: string) => {
     const activeToken = token || sessionStorage.getItem('session_token');
-    const isMockToken = activeToken === 'mock-jwt-token-serverless';
-
-    if (isOfflineFallback && isMockToken) {
-      const saved = localStorage.getItem('mca_records');
-      if (saved) {
-        try {
-          setRecords(JSON.parse(saved));
-        } catch (e) {}
-      }
-      return;
-    }
-
     if (!activeToken) return;
 
     try {
@@ -240,7 +163,6 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok) {
-        setIsOfflineFallback(false); // Successfully reached server!
         setRecords(data.records || []);
         setSheetsStatus({
           configured: data.sheetsConnected,
@@ -272,13 +194,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to connect to backend:", err);
-      showToast('Could not reach Netlify server. Displaying local cache.', 'error');
-      const saved = localStorage.getItem('mca_records');
-      if (saved) {
-        try {
-          setRecords(JSON.parse(saved));
-        } catch (e) {}
-      }
+      showToast('Could not reach Netlify server. Please check your network connection.', 'error');
     }
   };
 
@@ -288,16 +204,13 @@ export default function App() {
     setUsername(username);
     setIsAuthenticated(true);
     setActiveView('dashboard');
-    if (token !== 'mock-jwt-token-serverless') {
-      setIsOfflineFallback(false); // Disarm offline mode for authentic backend logins
-    }
     fetchDatabaseRecords(token);
   };
 
   // Logout handler
   const handleLogout = async () => {
     const token = sessionStorage.getItem('session_token');
-    if (token && !isOfflineFallback) {
+    if (token) {
       try {
         await fetch('/api/auth/logout', {
           method: 'POST',
@@ -319,15 +232,6 @@ export default function App() {
 
   // Record Deleted Callback
   const handleDeleteRecord = async (pin: string) => {
-    if (isOfflineFallback) {
-      const current = [...records];
-      const filtered = current.filter(r => r.pin !== pin);
-      localStorage.setItem('mca_records', JSON.stringify(filtered));
-      setRecords(filtered);
-      showToast('Record deleted from browser storage successfully.', 'success');
-      return;
-    }
-
     const token = sessionStorage.getItem('session_token');
     if (!token) return;
 

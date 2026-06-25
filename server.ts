@@ -482,7 +482,7 @@ async function loadAllRecords(): Promise<{
     return {
       records: localRecords,
       sheetsConnected: false,
-      sheetsStatus: 'Google Sheets variables are not set in the environment. Active in local fallback mode.',
+      sheetsStatus: 'Google Sheets variables are NOT configured on Netlify! Please add GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_SPREADSHEET_ID to your Netlify Environment Variables settings.',
     };
   }
 
