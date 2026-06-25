@@ -185,6 +185,26 @@ export default function App() {
             clientEmail: statusData.clientEmail,
           });
         }
+
+        // Diagnostic environment check to trace process.env variables on Netlify
+        try {
+          const debugRes = await fetch('/api/debug-env', {
+            headers: {
+              'Authorization': `Bearer ${activeToken}`
+            }
+          });
+          if (debugRes.ok) {
+            const debugData = await debugRes.json();
+            console.log('[DEBUG-ENV-SERVER-DIAGNOSTICS] Response from Netlify Server Proxy:', debugData.diagnostics);
+            if (!debugData.diagnostics.spreadsheetId.rawExists) {
+              console.warn('[DEBUG-ENV-SERVER-DIAGNOSTICS] WARNING: GOOGLE_SPREADSHEET_ID is UNDEFINED on Netlify environment. Make sure it is saved in your Netlify Dashboard Settings.');
+            } else {
+              console.log(`[DEBUG-ENV-SERVER-DIAGNOSTICS] Success: GOOGLE_SPREADSHEET_ID is loaded successfully! Masked Value: ${debugData.diagnostics.spreadsheetId.cleanedValue}`);
+            }
+          }
+        } catch (debugErr) {
+          console.error('[DEBUG-ENV-SERVER-DIAGNOSTICS] Failed to fetch server debug-env diagnostics:', debugErr);
+        }
       } else {
         showToast(data.error || 'Failed to retrieve records from server.', 'error');
         if (res.status === 401) {

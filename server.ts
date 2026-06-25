@@ -478,7 +478,15 @@ async function loadAllRecords(): Promise<{
   const config = getSheetsConfig();
   const localRecords = readLocalDb();
 
+  console.log('[GOOGLE_SHEETS_DIAGNOSTIC] loadAllRecords called.');
+  console.log('[GOOGLE_SHEETS_DIAGNOSTIC] process.env.GOOGLE_SPREADSHEET_ID =', process.env.GOOGLE_SPREADSHEET_ID ? `"${process.env.GOOGLE_SPREADSHEET_ID}"` : 'UNDEFINED / NOT_SET');
+  console.log('[GOOGLE_SHEETS_DIAGNOSTIC] getSheetsConfig() spreadsheetId =', config.spreadsheetId ? `"${config.spreadsheetId}"` : 'NOT_CONFIGURED');
+  console.log('[GOOGLE_SHEETS_DIAGNOSTIC] email configured =', !!config.email);
+  console.log('[GOOGLE_SHEETS_DIAGNOSTIC] privateKey configured =', !!config.privateKey);
+  console.log('[GOOGLE_SHEETS_DIAGNOSTIC] isConfigured value =', config.isConfigured);
+
   if (!config.isConfigured) {
+    console.warn('[GOOGLE_SHEETS_DIAGNOSTIC] Google Sheets integration is incomplete! Falling back to local DB.');
     return {
       records: localRecords,
       sheetsConnected: false,
@@ -802,6 +810,42 @@ app.get('/api/sheets-status', requireAuth, (req, res) => {
     configured: config.isConfigured,
     spreadsheetId: config.spreadsheetId || null,
     clientEmail: config.email || null,
+  });
+});
+
+// Explicit environment variable diagnosis for spreadsheet ID, service account, and private key
+app.get('/api/debug-env', requireAuth, (req, res) => {
+  const rawSpreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
+  const rawEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const rawPrivateKey = process.env.GOOGLE_PRIVATE_KEY;
+
+  const maskValue = (val: string | undefined) => {
+    if (!val) return 'MISSING_OR_UNDEFINED';
+    const trimmed = val.trim();
+    if (trimmed.length <= 10) return `SET_BUT_SHORT_LEN_${trimmed.length}`;
+    return `${trimmed.slice(0, 5)}...${trimmed.slice(-5)} (length: ${trimmed.length})`;
+  };
+
+  res.json({
+    diagnostics: {
+      nodeEnv: process.env.NODE_ENV || 'not-set',
+      spreadsheetId: {
+        rawExists: !!rawSpreadsheetId,
+        rawLength: rawSpreadsheetId ? rawSpreadsheetId.length : 0,
+        cleanedValue: maskValue(rawSpreadsheetId),
+      },
+      serviceAccountEmail: {
+        rawExists: !!rawEmail,
+        rawLength: rawEmail ? rawEmail.length : 0,
+        cleanedValue: rawEmail ? `${rawEmail.slice(0, 4)}...${rawEmail.slice(rawEmail.indexOf('@') >= 0 ? rawEmail.indexOf('@') - 2 : 4)}` : 'MISSING',
+      },
+      privateKey: {
+        rawExists: !!rawPrivateKey,
+        rawLength: rawPrivateKey ? rawPrivateKey.length : 0,
+        formatValid: rawPrivateKey ? rawPrivateKey.includes('-----BEGIN PRIVATE KEY-----') : false,
+      },
+      sheetsConfigured: getSheetsConfig().isConfigured,
+    }
   });
 });
 
